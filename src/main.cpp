@@ -142,8 +142,8 @@ int main() {
                         double check_car_d = sensor_fusion[i][6];
                         //Sometimes noticed simulator returning huge impossible velocities
                         //Filter those noisy velocities
-                        if (check_car_speed > road.speed_limit) 
-                            check_car_speed =  road.speed_limit;
+                        if (check_car_speed > (road.speed_limit + 10)) 
+                            check_car_speed =  road.speed_limit + 10;
                         //Assert garbage location of vehicles
                         //Otherwise this would cause collision even if there is no car present
                         //- Simulator bug
