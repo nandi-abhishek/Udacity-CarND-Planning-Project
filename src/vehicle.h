@@ -36,13 +36,13 @@ public:
  
 class Road {
 public:
-    int num_lanes;
-    vector<double> lane_speeds;
-    double speed_limit;
-    double track_s; 
-    map<int, Vehicle> vehicles;
-    Vehicle my_car;
-    int prev_path_no_points;
+    int num_lanes;                 //Num of lanes in the road
+    vector<double> lane_speeds;    //Suggested speed of each lane
+    double speed_limit;            //Speed limit of the road
+    double track_s;                //Track length
+    map<int, Vehicle> vehicles;    //All vehicles returned by fusion module
+    Vehicle my_car;                //My car
+    int prev_path_no_points;       //Previous path no of points to consider
 
     /**
     * Constructor
@@ -63,7 +63,7 @@ public:
         
     bool get_vehicle_behind(int lane, double scan_distance, Vehicle & rVehicle);
     bool get_vehicle_ahead(int lane, double scan_distance, Vehicle & rVehicle);
-    bool get_vehicle_ahead(double d, bool check_lane_left, double scan_distance, Vehicle & rVehicle);
+    bool get_vehicle_ahead(bool check_lane_left, double scan_distance, Vehicle & rVehicle);
 };
 
 #endif

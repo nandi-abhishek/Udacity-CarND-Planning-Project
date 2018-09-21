@@ -21,18 +21,18 @@
 #define SEMI_CRITICAL_DISTANCE CRT_DST_FACTOR * CRITICAL_DISTANCE
 #define SCAN_DISTANCE 500
 #define SCAN_DISTANCE_FACTOR 5
-#define MAX_ACC 7.5
+#define ACC 7.5
 #define PREV_PATH_N_CRITICAL 5
 
 using namespace std;
 
 typedef enum {
         ST = 0, //Start State. Also used for dummy state
-        KL,        //Keep lane state
-        PLCL,    //Prepare lane change left 
+        KL,     //Keep lane state
+        PLCL,   //Prepare lane change left 
         LCL,    //Lane change left
-        PLCR,    //Prepare lane change right
-        LCR        //Lane change right
+        PLCR,   //Prepare lane change right
+        LCR     //Lane change right
 } StateType;
 
 class State 
@@ -40,15 +40,16 @@ class State
 public:
     static map<int, string> state_name;
     static State DUMMY_STATE;
-    Vehicle v_ahead;
-    Vehicle v_behind;
-    Vehicle v_ahead_cur_lane;
-    Vehicle v_behind_cur_lane;
-    double target_v;
-    double target_s;
-    double target_d;
-    double possible_v;
-    StateType type;
+
+    Vehicle v_ahead;                //Ahead vehicle in target lane
+    Vehicle v_behind;               //Behind vehicle in target lane
+    Vehicle v_ahead_cur_lane;       //Ahead vehicle in current lane
+    Vehicle v_behind_cur_lane;      //Behind vehicle in current lane
+    double target_v;                //Immediate target velocity
+    double target_s;                //Target s value
+    double target_d;                //Target d value - determines target lane
+    double possible_v;              //Possible future velocity in target lane
+    StateType type;                 //Type of the State
     
     State() : target_v(0), target_s(0), target_d(0), type(ST) {}
     State(double v, double s, double d, StateType st) : target_v(v), target_s(s), target_d(d), type(st) {}
@@ -60,12 +61,12 @@ class Planner {
 public:
     map<StateType, int> lane_direction = {{PLCL, -1}, {LCL, -1}, {LCR, 1}, {PLCR, 1}};
 
-    State current_state;
-    int previous_path_size;
-    double v_old_final;
-    double max_acc;
-    Road &road;
-	chrono::high_resolution_clock::time_point t_start;
+    State current_state;            //Current state the car is in
+    int previous_path_size;         //Previous path num of points
+    double v_old_final;             //Last final velocity given to Trajectory
+    double max_acc;                 //Max allowed accleration
+    Road &road;                     //Refernce to road
+    chrono::high_resolution_clock::time_point t_start;        //Used to get time of state 
  
     /**
     * Constructor
@@ -76,7 +77,7 @@ public:
     */
     virtual ~Planner();
 
-	void print_time();
+    void print_time();
     vector<double> plan(vector<double> &previous_path_x, vector<double> &previous_path_y,
                         double end_path_s, double end_path_d);
     State choose_next_state();

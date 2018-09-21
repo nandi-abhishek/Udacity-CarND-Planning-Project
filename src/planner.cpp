@@ -15,11 +15,11 @@ map<int, string> State::state_name = {{0, "ST"}, {1, "KL"}, {2, "PLCL"}, {3, "LC
  * Initializes Planner
  */
 Planner::Planner(Road &r) : road(r) {
-    this->current_state = State::DUMMY_STATE;
-    this->previous_path_size = 0;
-    this->v_old_final = 0;
-    this->max_acc = MAX_ACC;
-    this->t_start = chrono::high_resolution_clock::now();
+    current_state = State::DUMMY_STATE;
+    previous_path_size = 0;
+    v_old_final = 0;
+    max_acc = ACC;
+    t_start = chrono::high_resolution_clock::now();
 }
 
 Planner::~Planner() {}
@@ -50,6 +50,9 @@ void Planner::print_time() {
     cout << "Time: " << time_span.count() << " seconds" << endl;
 }
 
+//The main planner API
+//Input: Previous path and my_car s,d at previous path end
+//Output: Target velocity and 'd' value sof target lane
 vector<double> Planner::plan(vector<double> &previous_path_x,
                              vector<double> &previous_path_y,
                              double end_path_s,
@@ -57,6 +60,8 @@ vector<double> Planner::plan(vector<double> &previous_path_x,
 {
     previous_path_size = previous_path_x.size();
 
+    //1. generate predicted location of all other vehicles when my_car reach end_path_s
+    //Assume constant instatenuous velocity
     map<int, Vehicle>::iterator it = road.vehicles.begin();
     while(it != road.vehicles.end())
     {
@@ -69,7 +74,7 @@ vector<double> Planner::plan(vector<double> &previous_path_x,
         it++;
     }
 
-    //Check for collision to assert - help debugging
+    //2. Check for collision to assert - help debugging
     Vehicle vehicle_ahead;
     Vehicle vehicle_behind;
     bool forward_vehicle_found = road.get_vehicle_ahead(road.my_car.lane, SCAN_DISTANCE, vehicle_ahead);
@@ -87,6 +92,7 @@ vector<double> Planner::plan(vector<double> &previous_path_x,
         //assert(0);
     }
 
+    //3. Get next state with lowest cost
     State next_state = choose_next_state();
 
     if (current_state.type != next_state.type) {
@@ -94,19 +100,22 @@ vector<double> Planner::plan(vector<double> &previous_path_x,
     }
     double v_final = next_state.target_v;
 
+    //Give preference to old_car_velocity if current velocity is not close
     double v_cur = road.my_car.speed;
     if (fabs (v_cur - v_old_final) > 0.1) {
         v_cur = v_old_final;
     }    
+    //4. Calculate average acceleration required
     double avg_acc = (v_final - v_cur) / (2.24 * 0.02); //m /s^2
 
+    //5. if avg_acc is more than max_acc - limit avg_acc to max_acc
     if (avg_acc > max_acc) {
         avg_acc = max_acc;
     } else if (avg_acc < -max_acc) {
         avg_acc = -max_acc;
     }    
-    //Reset max_acc in case it is increased to avoid collision
-    max_acc = MAX_ACC;
+    //6. Reset max_acc in case it is increased to avoid collision
+    max_acc = ACC;
 
     v_final = v_cur / 2.24 + avg_acc * 0.02 ;
     v_old_final = v_final * 2.24;
@@ -122,20 +131,34 @@ vector<double> Planner::plan(vector<double> &previous_path_x,
     return {v_final, next_state.target_d};
 }
 
+//Returns cost of taking the new 'state'
 double Planner::get_cost(State state) {
     double cost = 0.0;
+    //1. Actual distance cost
     cost += get_buffer_distance_cost(state, false);
+    
+    //2. Projected distance cost
     cost += get_buffer_distance_cost(state, true);
+    
+    //3. Efficieny cost - mostly how quick we can go
     cost += get_efficiency_cost(state);
+
+    //4. Lane change extra cost
     cost += get_lane_change_extra_cost(state);
+
+    //5. Target 'd' cost during lane change
     cost += get_target_d_cost(state);
+
     return cost;
 }
 
+//Returns cost of 'state' based on actual or 'projected' distance
+//Distance has impact to cost only if it is less than BUFFER_DISTANCE
 double Planner::get_buffer_distance_cost(State state, bool projected) {
     double cost = 0.0;
     string report_str = projected ? "projected after previous_path end " : "actual ";
     if (state.type == KL) {
+        //1. If 'keep lane' state and we have a vehicle ahead within BUFFER_DISTANCE
         if (state.v_ahead.is_valid()) {
             double b_d = road.position_diff(state.v_ahead, road.my_car, projected); 
             cout << "\t\t\t Ahead: v_id: " << state.v_ahead.id << " s_diff: "  <<
@@ -145,6 +168,8 @@ double Planner::get_buffer_distance_cost(State state, bool projected) {
             }
         }
     } else if (state.type == PLCL || state.type == PLCR) {
+        //2. If 'prepare lane change' state and we have a vehicle ahead in current lane 
+        //within BUFFER_DISTANCE
         if (state.v_ahead_cur_lane.is_valid()) {
             double b_d = road.position_diff(state.v_ahead_cur_lane, road.my_car, projected);
             cout << "\t\t\t Ahead_current_lane: v_id:  " << state.v_ahead_cur_lane.id << " s_diff: "  << 
@@ -154,6 +179,9 @@ double Planner::get_buffer_distance_cost(State state, bool projected) {
             }
         }
     } else if (state.type == LCL || state.type == LCR) {
+        //3. If 'lane change' state and we have a vehicle ahead/behind in target lane 
+        //within BUFFER_DISTANCE. Choose behind vehicle distance if it is within
+        //SEMI_CRITICAL_DISTANCE
         Vehicle compare_vehicle = state.v_ahead;
         double b_d =  road.position_diff(state.v_ahead, road.my_car, projected);
         if (state.v_behind.is_valid()) {
@@ -175,17 +203,25 @@ double Planner::get_buffer_distance_cost(State state, bool projected) {
     return cost;
 }
 
+//Returns cost of 'state' based on 'possible' velocity - state.possible_v
+//(not current velocity - state.target_v)
+//The faster the possible velocity the lower is the cost
 double Planner::get_efficiency_cost(State state) {
     double cost = 0.0;
     cost = 1 - (state.possible_v / road.speed_limit);
     return cost;
 }
 
+//Lane change states have added extra cost associated with it
 double Planner::get_lane_change_extra_cost(State state) {
     double cost = 0.0;
     Vehicle vehicle_ahead;
     if (current_state.type == KL &&
         state.type != KL) {
+        //1. Current state is keep lane -> next 'state' is PLCL/PLCR
+        //Add extra cost of 0.02. If there is a vehicle ahead in target lane
+        //the extra cost increases 0.2 beased on its distance and velocity
+        
         int new_lane = road.my_car.lane + lane_direction[state.type];
         bool forward_vehicle_found = road.get_vehicle_ahead(new_lane, SCAN_DISTANCE / (2 * SCAN_DISTANCE_FACTOR), vehicle_ahead);
         if (vehicle_ahead.is_valid()) {
@@ -198,6 +234,10 @@ double Planner::get_lane_change_extra_cost(State state) {
             //If > 50 m difference min velocity difference 1 mi/h
             cost += 0.02; //fixed cost
         }
+
+        //2. This planner has given ann extra weightage to center lane.
+        //When center lane is enpty till SCAN DISTANCE and we dont have a car
+        //close enough in current lane - then reward center lane change
         if (road.my_car.lane != 1) {
             if ((!current_state.v_ahead.is_valid() || 
                  road.position_diff(current_state.v_ahead, road.my_car, false) >  BUFFER_DISTANCE) && 
@@ -209,10 +249,18 @@ double Planner::get_lane_change_extra_cost(State state) {
             }
         }
     }
-    if (state.type != KL) {
+    if ((current_state.type == KL || current_state.type == PLCL || current_state.type == PLCR) && 
+        state.type != KL) {
         bool forward_vehicle_found = road.get_vehicle_ahead(road.my_car.lane, BUFFER_DISTANCE, vehicle_ahead);
         if (forward_vehicle_found) {
+            //3. possible state in this conditions : KL->PLCL, KL->PLCR
+            //PLCL->PLCL/LCL, PLCR->PLCR/LCR
+            //If more than 50 m diff with forward vehicle in target lane
+            //then reward this path to allow even mph less speed
             int new_lane = road.my_car.lane + lane_direction[state.type];
+            if (state.type == LCL || state.type ==  LCR) {
+                new_lane = road.my_car.lane;
+            }
             bool forward_vehicle_found = road.get_vehicle_ahead(new_lane, SCAN_DISTANCE, vehicle_ahead);
             if (!forward_vehicle_found || 
                 road.position_diff(vehicle_ahead, road.my_car, false) > (SCAN_DISTANCE / (2 * SCAN_DISTANCE_FACTOR))) {
@@ -222,6 +270,11 @@ double Planner::get_lane_change_extra_cost(State state) {
     }
     if (current_state.type == PLCL || current_state.type == PLCR) {
         if (state.type == LCL || state.type == LCR) {
+            //4. Given center lane weightage
+            //Help to choose LCL/LCR states from prepare steps
+            //when only target lane velocity is contributing to cost factor
+            //this happens when car shifts from left/right lane to center lane
+            //due to center lane weightage
             if (!state.v_ahead.is_valid()) {
                 cost -= 0.01;
             }
@@ -230,6 +283,7 @@ double Planner::get_lane_change_extra_cost(State state) {
     return cost;
 }
 
+//Reward a LCL/LCR step till target d is not close enough
 double Planner::get_target_d_cost(State state) {
     double cost = 0.0;
     if ((current_state.type == LCL && state.type == LCL) ||
@@ -243,12 +297,15 @@ double Planner::get_target_d_cost(State state) {
     return cost;
 }
 
+//Returns next best state
 State Planner::choose_next_state() {
+    //1. Get all the successor steps from FSM
     vector<StateType> states = successor_states();
     double cost;
     vector<double> costs;
     vector<State> predicted_states;
 
+    //2.Print state details for debugging
     cout << "-----------------------------------" << endl;
     cout << "\t";
     print_time();
@@ -265,26 +322,38 @@ State Planner::choose_next_state() {
         }
     }
 
+    //3.Get best state based on cost
     vector<double>::iterator best_cost = min_element(begin(costs), end(costs));
     int best_idx = distance(begin(costs), best_cost);
     State best_state = predicted_states[best_idx];
     if (road.my_car.lane == 1) {
+        //4. If car is in middle lane then re-check distance cost for PLCL/PLCR
+        //This is becuase distance impacts in get_cost only if it is within BUFFER_DISTANCE
         choose_next_LC_state(states, best_state);
     }
-    //Final check - Common for all states
+
+    //5. Final check - Common for all states
     Vehicle vehicle_ahead;
+    //5.1 get forward vehicle if not found in current lane
+    //then check if from next lane within 2m from my car's 'd'
+    //This can happen if a vehicle ahead from next lane is turing 
+    //to our target lane but not yet crossed its own lane
     bool forward_vehicle_found = road.get_vehicle_ahead(road.my_car.lane, BUFFER_DISTANCE, vehicle_ahead);
     if (!forward_vehicle_found) {
         if (best_state.type == LCL || best_state.type == LCR) {
             if (fabs(road.my_car.d - best_state.target_d) < 2) {
                 //Car has just crossed the lane            
-                forward_vehicle_found = road.get_vehicle_ahead(road.my_car.d,
-                            best_state.type == LCR ? true : false /*check_left_lane*/ ,
-                            BUFFER_DISTANCE, vehicle_ahead);
+                forward_vehicle_found = road.get_vehicle_ahead(best_state.type == LCR ?
+                                                                 true : false /*check_left_lane*/ ,
+                                                               BUFFER_DISTANCE, vehicle_ahead);
             }
         }
     }
     if (forward_vehicle_found) {
+        //5.2 If such a vehicle is found then and it is close to my_car,
+        //also it is slower than my car then reduce no of point from previous path
+        //based on distance. This is to react to this sudden change
+        //and decelerate quickly
         double forward_distance = road.position_diff(vehicle_ahead, road.my_car, false);
         if (vehicle_ahead.speed < road.my_car.speed &&
             forward_distance < BUFFER_DISTANCE - 5) {
@@ -293,6 +362,8 @@ State Planner::choose_next_state() {
                                         (std::min((BUFFER_DISTANCE - forward_distance),  delta) / delta);
             cout << "\t\t\t Update prev_path no of points to " << road.prev_path_no_points << endl;
         }
+        //5.3 If that vehicle is very close - increase max_acc temporarily
+        //Also cap target velocity to min(best_state.v,foreard_car.v,30) 
         if (forward_distance <  SEMI_CRITICAL_DISTANCE) {
             if (vehicle_ahead.speed < best_state.target_v) {
                 best_state.target_v = vehicle_ahead.speed;
@@ -311,6 +382,12 @@ State Planner::choose_next_state() {
     return best_state;
 }
 
+//If car is in center lane and best_state is PLCL/PCLR
+//then re-check the other prep_lane_change cost
+//It could happen during previous costing step the distance of these
+//two steps didn't impact as they were > BUFFER_DISTANCE
+//and we choose state only based on velocity. So, this step
+//works as secondary costing step with their distance
 void Planner::choose_next_LC_state(vector<StateType>& states, State &best_state)
 {
     State other_state;
@@ -348,6 +425,7 @@ void Planner::choose_next_LC_state(vector<StateType>& states, State &best_state)
     }
 }
 
+//Returns lists of possible states from FSM
 vector<StateType> Planner::successor_states() {
     vector<StateType> states;
     states.push_back(KL);
@@ -372,10 +450,8 @@ vector<StateType> Planner::successor_states() {
     return states;
 }
 
+//Given a state type returns details of next_state from current_state
 State Planner::get_state_details(StateType st) {
-    /*
-    Given a possible next state, generate the appropriate trajectory to realize the next state.
-    */
     State s;
     if (st == ST) {
         assert(0); //Can not reach here
@@ -389,10 +465,8 @@ State Planner::get_state_details(StateType st) {
     return s;
 }
 
+//Return next keep lane state details
 State Planner::get_keep_lane_state() {
-    /*
-    Generate a keep lane trajectory.
-    */
     Vehicle vehicle_ahead;
     Vehicle vehicle_behind;
     bool forward_vehicle_found = road.get_vehicle_ahead(road.my_car.lane, SCAN_DISTANCE, vehicle_ahead);
@@ -401,12 +475,16 @@ State Planner::get_keep_lane_state() {
     double target_v = road.speed_limit;
     State s(target_v, -1, 2 + road.my_car.lane * 4, KL);
     
-	double forward_distance = road.track_s;
+    //1.Select immediate terget velocity
+    double forward_distance = road.track_s;
     if (forward_vehicle_found) {    
         forward_distance = road.position_diff(vehicle_ahead, road.my_car, false);
+        //1.1 If no car is within BUFFER_DISTANCE keep it to spped_limit
+        //else set it to forward vehicle speed
         if (forward_distance < BUFFER_DISTANCE) {
             target_v = vehicle_ahead.speed;
            }
+           //1.2 If forward car is too close select lowest velocity
            if (forward_distance < SEMI_CRITICAL_DISTANCE) {
             if (vehicle_ahead.speed > current_state.target_v)
                 target_v = current_state.target_v;
@@ -415,13 +493,16 @@ State Planner::get_keep_lane_state() {
         }
     }
     s.target_v = target_v;
-	s.possible_v = road.speed_limit;
-	if (forward_vehicle_found && forward_distance < SCAN_DISTANCE / (2 * SCAN_DISTANCE_FACTOR)) 
-	{
-        s.possible_v = vehicle_ahead.speed;
-	} else if (forward_distance < BUFFER_DISTANCE) {
-       	s.possible_v = target_v;
-	}
+
+    //2.Select possible future velocity in this state
+    //2.1 default target velocity
+    s.possible_v = target_v;
+    if (forward_vehicle_found &&
+         forward_distance < SCAN_DISTANCE / (2 * SCAN_DISTANCE_FACTOR)) 
+    {
+        //2.2 if there is a car within 50m - set it to min(car_speed, target_velocity)
+        s.possible_v = std::min(vehicle_ahead.speed, target_v);
+    }
     s.v_ahead = vehicle_ahead;
     s.v_ahead_cur_lane = vehicle_ahead;
     s.v_behind = vehicle_behind;
@@ -429,30 +510,38 @@ State Planner::get_keep_lane_state() {
     return s;
 }
 
+//Return next prepare lane change state details
 State Planner::get_prep_lane_change_state(StateType st) {
+    //1. Determine target lane
     int new_lane = road.my_car.lane + lane_direction[st];
     Vehicle vehicle_ahead;
     Vehicle vehicle_behind;
     bool forward_vehicle_found = road.get_vehicle_ahead(new_lane, SCAN_DISTANCE, vehicle_ahead);
     bool backward_vehicle_found = road.get_vehicle_behind(new_lane, SCAN_DISTANCE, vehicle_behind);
 
-    bool possible = true;
     State s(road.speed_limit, -1, 2 + road.my_car.lane * 4, st);
     Vehicle vehicle_ahead_cur_lane;
     if (road.get_vehicle_ahead(road.my_car.lane, SCAN_DISTANCE, vehicle_ahead_cur_lane)) {
         s.v_ahead_cur_lane = vehicle_ahead_cur_lane;
-        if (road.position_diff(vehicle_ahead_cur_lane, road.my_car, false) < (SEMI_CRITICAL_DISTANCE)) {
-            possible = false;
-        }
-    }
+    }    
     Vehicle vehicle_behind_cur_lane;
     if (road.get_vehicle_behind(road.my_car.lane, SCAN_DISTANCE, vehicle_behind_cur_lane)) {
         s.v_behind_cur_lane = vehicle_behind_cur_lane;
     }
 
+    //2. First check if we have enough gap for a lane change
+    bool possible = true;
+    if (s.v_ahead_cur_lane.is_valid()) {
+        //2.1. Not possible if current lane ahead vehicle is too close
+        if (road.position_diff(vehicle_ahead_cur_lane, road.my_car, false) < (SEMI_CRITICAL_DISTANCE)) {
+            possible = false;
+        }
+    }
     double forward_distance = 0;
     if (possible && forward_vehicle_found) {
         forward_distance = road.position_diff(vehicle_ahead, road.my_car, false);     
+        //2.1. Not possible if target lane ahead vehicle is too close or
+        //target lane forward gap is less than current lane forward gap
         if (forward_distance < SEMI_CRITICAL_DISTANCE ||
             (s.v_ahead_cur_lane.is_valid() && forward_distance < road.position_diff(s.v_ahead_cur_lane, road.my_car, false))) {
             possible = false;
@@ -461,8 +550,11 @@ State Planner::get_prep_lane_change_state(StateType st) {
     double backward_distance = 0;
     if (possible && backward_vehicle_found) {
         backward_distance = road.position_diff(road.my_car, vehicle_behind, false);
+        //2.2. Not possible if target lane behind vehicle is too close 
         if  (backward_distance < (SEMI_CRITICAL_DISTANCE)) { 
             possible = false;
+            //2.3. But if the behind vehicle in target lane is going slower than my car
+            //then it is possible till it is not within CRITICAL DISTANCE
             if (road.my_car.speed > vehicle_behind.speed) {
                 if (backward_distance > CRITICAL_DISTANCE) {
                     //Risky condition - tests require
@@ -472,16 +564,25 @@ State Planner::get_prep_lane_change_state(StateType st) {
         }
     }
 
+    //3. Return DUMMY state if not posible
     if (!possible) {
         return State::DUMMY_STATE;
     }
 
+    //4.Select possible future velocity in this state
+    //Default speed_limit
+    //But, if there is a car within 100m in target lane- set it to min car_speed
     s.possible_v = road.speed_limit;
-    s.target_v = current_state.target_v;
     if (forward_vehicle_found && forward_distance < SCAN_DISTANCE / SCAN_DISTANCE_FACTOR) {
         s.possible_v = vehicle_ahead.speed;
     }
+
+    //5.Select immediate terget velocity
+    //Default is whatever current_state target_v we have
+    s.target_v = current_state.target_v;
     if (backward_vehicle_found && backward_distance < BUFFER_DISTANCE) {
+        //5.1 If behind behicle in target lane is within BUFFER_DISTANCE try to match that velocity
+        //if it is more than current target velocity
         double max_v = s.v_ahead_cur_lane.speed > vehicle_behind.speed ? s.v_ahead_cur_lane.speed : vehicle_behind.speed;
         if (max_v > s.target_v) {
             s.target_v = max_v;
@@ -489,6 +590,8 @@ State Planner::get_prep_lane_change_state(StateType st) {
     }
     if (s.v_ahead_cur_lane.is_valid() && 
         road.position_diff(s.v_ahead_cur_lane, road.my_car, false) < (BUFFER_DISTANCE - 5) &&
+        //5.2 If the ahead car in current lane is quite close then dont increase target_speed
+        //beyond possible_velocity of target lane 
         s.target_v > s.possible_v) {
         s.target_v = s.possible_v;
     }
@@ -497,10 +600,9 @@ State Planner::get_prep_lane_change_state(StateType st) {
     return s;
 }
 
+//Return next lane change state details
 State Planner::get_lane_change_state(StateType st) {
-    /*
-    Generate a lane change trajectory.
-    */
+    //1. Determine target lane
     int new_lane = road.my_car.lane + lane_direction[st];
     if (current_state.type == st) {
         new_lane = current_state.target_d / 4;
@@ -512,9 +614,14 @@ State Planner::get_lane_change_state(StateType st) {
     bool backward_vehicle_found = road.get_vehicle_behind(new_lane, SCAN_DISTANCE, vehicle_behind);
 
     State s(road.speed_limit, -1, 2 + new_lane * 4, st);
-    s.possible_v = road.speed_limit;
+    
+    //2.Select immediate terget velocity
     s.target_v = current_state.target_v;
+
+    //3.Select possible future velocity in this state
+    s.possible_v = road.speed_limit;
     if (forward_vehicle_found) {
+        //3.2 if there is a car within 100m in target lane - set it to min car_speed
         if (road.position_diff(vehicle_ahead, road.my_car, false) < SCAN_DISTANCE / SCAN_DISTANCE_FACTOR) {
             s.possible_v = vehicle_ahead.speed;
         }

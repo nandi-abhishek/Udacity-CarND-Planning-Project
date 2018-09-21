@@ -119,7 +119,8 @@ int main() {
                         end_path_s = sd[0];
                         end_path_d = sd[1];
                     }
-                    //Reset prev_path_no_points if changed in previous iteration
+                    //Reset prev_path_no_points 
+                    //This might have been modified by planner
                     road.prev_path_no_points = PREV_PATH_N;
 
                     // Sensor Fusion Data, a list of all other cars on the same side of the road.
@@ -150,6 +151,7 @@ int main() {
                         if (check_car_s == 0 && check_car_d == 0) {
                             cout << "\tSIMULATOR BUG - GARBAGE VEHICLE DATA" << endl;
                             cout << "\t" << car << endl;
+                            //The following assert can be turned on for debugging
                             //assert(0);
                         }
                         road.update_car(car);
@@ -164,11 +166,17 @@ int main() {
                     vector<double> next_y_vals;
             
                     //Generate trajectory using target_v and target_d using spline 
-                    tj.create_trajectory(my_car, ref_kinematics, 
-                        previous_path_x, previous_path_y,
-                        end_path_s, end_path_d, map_waypoints_x,
-                        map_waypoints_y, map_waypoints_s, 
-                        next_x_vals, next_y_vals);
+                    tj.create_trajectory(my_car, 
+                                        ref_kinematics, 
+                                        previous_path_x,
+                                        previous_path_y,
+                                        end_path_s, 
+                                        end_path_d, 
+                                        map_waypoints_x,
+                                        map_waypoints_y, 
+                                        map_waypoints_s, 
+                                        next_x_vals,
+                                        next_y_vals);
 
                     json msgJson;
 

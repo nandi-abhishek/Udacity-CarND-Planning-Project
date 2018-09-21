@@ -139,19 +139,18 @@ bool Road::get_vehicle_ahead(int lane, double scan_distance, Vehicle & rVehicle)
     return found_vehicle;
 }
 
-//Returns a true if a vehicle is found ahead of the current vehicle, false otherwise. The passed reference
-//rVehicle is updated if a vehicle is found.
-bool Road::get_vehicle_ahead(double d, bool check_lane_left, double scan_distance, Vehicle & rVehicle) {
+//Returns if there is a vehicle ahead in the left/right lane within 2m 'd' value difference
+bool Road::get_vehicle_ahead(bool check_lane_left, double scan_distance, Vehicle & rVehicle) {
     bool found_vehicle = false;
     int lane = my_car.d / 4;
     lane = check_lane_left ? lane - 1 : lane + 1;
-	assert(lane >= 0 && lane <= 2); 
+    assert(lane >= 0 && lane <= 2); 
     found_vehicle = get_vehicle_ahead(lane, scan_distance, rVehicle);
     if (found_vehicle) {
-		if (fabs(my_car.d - rVehicle.d) > 2) {
-			found_vehicle = false;
-		}
-	}    
+        if (fabs(my_car.d - rVehicle.d) > 2) {
+            found_vehicle = false;
+        }
+    }    
     return found_vehicle;
 }
 

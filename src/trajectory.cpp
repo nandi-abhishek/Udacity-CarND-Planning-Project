@@ -11,11 +11,17 @@
 //Output: Spline trajectory x,y points in next_x_vals and next_y_vals
 //
 //Note: points of previous path are also part of new trajectry 
-void Trajectory::create_trajectory(Vehicle &my_car, vector<double> ref_kinematics, 
-                    vector<double> &previous_path_x, vector<double> &previous_path_y,
-                    double end_path_s, double end_path_d, vector<double> &map_waypoints_x,
-                    vector<double> &map_waypoints_y, vector<double> &map_waypoints_s,
-                    vector<double> &next_x_vals, vector<double> &next_y_vals)
+void Trajectory::create_trajectory(Vehicle &my_car, 
+                                   vector<double> ref_kinematics, 
+                                   vector<double> &previous_path_x,
+                                   vector<double> &previous_path_y,
+                                   double end_path_s,
+                                   double end_path_d,
+                                   vector<double> &map_waypoints_x,
+                                   vector<double> &map_waypoints_y,
+                                   vector<double> &map_waypoints_s,
+                                   vector<double> &next_x_vals,
+                                   vector<double> &next_y_vals)
 {    
     double car_s = my_car.s;
     int prev_size = previous_path_x.size();
