@@ -258,9 +258,6 @@ double Planner::get_lane_change_extra_cost(State state) {
             //If more than 50 m diff with forward vehicle in target lane
             //then reward this path to allow even mph less speed
             int new_lane = road.my_car.lane + lane_direction[state.type];
-            if (state.type == LCL || state.type ==  LCR) {
-                new_lane = road.my_car.lane;
-            }
             bool forward_vehicle_found = road.get_vehicle_ahead(new_lane, SCAN_DISTANCE, vehicle_ahead);
             if (!forward_vehicle_found || 
                 road.position_diff(vehicle_ahead, road.my_car, false) > (SCAN_DISTANCE / (2 * SCAN_DISTANCE_FACTOR))) {
