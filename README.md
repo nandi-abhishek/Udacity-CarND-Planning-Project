@@ -100,19 +100,19 @@ Here is the data provided from the Simulator to the C++ Program
 
 1. Using the finite state machine the planner determines next set of possible states. Refer to `Planner::successor_states` in  [planner.cpp](./src/planner.cpp#426)
 
-2. For each possible state it determines whether changing to that state is feasible. If feasible then it determines the future possible velocity in that state. It also figures out immediate target velocity in that state. For example, suppose ego car is trying to change lane to left but there is vehicle just behind it in the left lane then it is not feasible. Refer `Planner::get_prep_lane_change_state` in [planner.cpp](./src/planner.cpp#511)
+2. For each possible state it determines whether changing to that state is feasible. If feasible then it determines the future possible velocity in that state. It also figures out immediate target velocity in that state. For example, suppose ego car is trying to change lane to left but there is vehicle just behind it in the left lane then it is not feasible. Refer `Planner::get_prep_lane_change_state` in [planner.cpp](./src/planner.cpp#L511)
 
 3. Each possible state is evaluated according to a set of cost functions, and the state with the lowest cost is selected.
-    - Distance cost: Cost based on both current and projected location of 'ego' car and other cars. This cost increases exponentially as chance of collision increases. -> [`Planner::get_buffer_distance_cost`](./src/planner.cpp#157)
-    - Efficiency cost: Returns cost based on possible velocity of next state. The faster the possible velocity the lower is the cost. -> [`Planner::get_efficiency_cost`](./src/planner.cpp#209)
-    - Lane change extra cost: Assotiate additional cost to lane change to prevent un-necessary lane shift. Reward if the car is trying to shift to center lane when there is no vehicle ahead. -> [`Planner::get_lane_change_extra_cost`](./src/planner.cpp#216)
-    - Reward lane change state if the car is already in that state and not reached center of the target lane. ->  [`Planner::get_target_d_cost`](./src/planner.cpp#284)
+    - Distance cost: Cost based on both current and projected location of 'ego' car and other cars. This cost increases exponentially as chance of collision increases. -> [`Planner::get_buffer_distance_cost`](./src/planner.cpp#L157)
+    - Efficiency cost: Returns cost based on possible velocity of next state. The faster the possible velocity the lower is the cost. -> [`Planner::get_efficiency_cost`](./src/planner.cpp#L209)
+    - Lane change extra cost: Assotiate additional cost to lane change to prevent un-necessary lane shift. Reward if the car is trying to shift to center lane when there is no vehicle ahead. -> [`Planner::get_lane_change_extra_cost`](./src/planner.cpp#L216)
+    - Reward lane change state if the car is already in that state and not reached center of the target lane. ->  [`Planner::get_target_d_cost`](./src/planner.cpp#L284)
 
-The key steps of best state selection is present in `Planner::choose_next_state` in [planner.cpp](./src/planner.cpp#298), It also determines how quickly the simulator will react to the new path by adjusting number of points to be taken from previous path. This is done when planner sees a vehicle in close proximity to avoid collision.
+The key steps of best state selection is present in `Planner::choose_next_state` in [planner.cpp](./src/planner.cpp#L298), It also determines how quickly the simulator will react to the new path by adjusting number of points to be taken from previous path. This is done when planner sees a vehicle in close proximity to avoid collision.
 
 
 #### 4.2.4: Produce New Path
-Once the best state is identified from the planner then the details are fed to tajectory generator to create a trajectory for the vehicle. This is done in `Trajectory::create_trajectory` in [tarjectory.cpp](./src/trajectory.cpp:14). The trajectory generator uses the best state details, previous path from simulator and map waypoints to create the new trajectory. I have used a spline to create it. The spline is implement in [spline.h](./src/spline.h)
+Once the best state is identified from the planner then the details are fed to tajectory generator to create a trajectory for the vehicle. This is done in `Trajectory::create_trajectory` in [tarjectory.cpp](./src/trajectory.cpp#L14). The trajectory generator uses the best state details, previous path from simulator and map waypoints to create the new trajectory. I have used a spline to create it. The spline is implement in [spline.h](./src/spline.h)
 
 ## 5. Results
 The planner is not perfect but it is able to drive the track in roughly five and half minutes. The following picture shows ego completing the track in 5m 23s.
@@ -131,7 +131,7 @@ Debugging is key in any software developement. I have faced several issues debug
    1. During the course lessons we were taught how important regression testing is. You fix something but you break some old case. There is no way to do that here other than just hoping old scenarios will randomly occur and get covered.
    As a suggestion, I would say the simulator should have a mode by which we can create certain scenarios and test that.
     
-   2. Secondly, I am not sure whether the simulator issues some trigger when a collision happens. I missed that feature. I tried to figure out collsion by 's' data of nearby cars but it failed many times because of simulator bug. Refer to [planner.cpp](./src/planner.cpp#83).  
+   2. Secondly, I am not sure whether the simulator issues some trigger when a collision happens. I missed that feature. I tried to figure out collsion by 's' data of nearby cars but it failed many times because of simulator bug. Refer to [planner.cpp](./src/planner.cpp#L83).  
 
 ## 7. Simulator issues
 The final thing I want to mention, which wasted lot of my time, is a buggy behavior of the simulator. Quite often it returns some of the other car's both 's' and 'd' data as 0 whereas in the picture you could see a car. So, the planner would not see that car and may take wrong move and collide. I have printed a log whenever such case happens. It helps debugging.
