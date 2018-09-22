@@ -98,7 +98,7 @@ Here is the data provided from the Simulator to the C++ Program
    
 <img src="./FSM.jpg" alt="drawing" width="500"/>
 
-1. Using the finite state machine the planner determines next set of possible states. Refer to `Planner::successor_states` in  [planner.cpp](./src/planner.cpp#426)
+1. Using the finite state machine the planner determines next set of possible states. Refer to `Planner::successor_states` in  [planner.cpp](./src/planner.cpp#L426)
 
 2. For each possible state it determines whether changing to that state is feasible. If feasible then it determines the future possible velocity in that state. It also figures out immediate target velocity in that state. For example, suppose ego car is trying to change lane to left but there is vehicle just behind it in the left lane then it is not feasible. Refer `Planner::get_prep_lane_change_state` in [planner.cpp](./src/planner.cpp#L511)
 
